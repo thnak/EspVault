@@ -39,7 +39,7 @@ jobs:
         path: |
           ~/esp/idf
           ~/.espressif
-        key: esp-idf-v5.5-esp32-${{ runner.os }}
+        key: esp-idf-v5.2-esp32-${{ runner.os }}
         
     - name: Install Host Dependencies
       run: |
@@ -49,7 +49,7 @@ jobs:
     - name: Install ESP-IDF
       uses: espressif/install-esp-idf-action@v1
       with:
-        version: 'v5.5'
+        version: 'v5.2'
         target: 'esp32'
         # Override /tmp/esp/idf with a persistent path for caching
         path: '~/esp/idf'

@@ -1,0 +1,15 @@
+# Factory NVS Configuration Template for EspVault
+# This file is used to pre-configure devices during manufacturing
+#
+# Format: key, type, encoding, value
+# Note: This will be flashed to the 'factory' partition
+
+# Namespace: wifi
+key,type,encoding,value
+vault,namespace,,
+wifi_ssid,data,string,YOUR_WIFI_SSID
+wifi_password,data,string,YOUR_WIFI_PASSWORD
+device_id,data,string,ESP32_VAULT_001
+mqtt_broker,data,string,mqtt://broker.example.com:1883
+mqtt_username,data,string,vault_user
+mqtt_password,data,string,vault_pass
