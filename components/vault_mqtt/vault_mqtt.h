@@ -44,6 +44,8 @@ typedef struct {
 typedef struct {
     esp_mqtt_client_handle_t client;
     vault_memory_t *memory;
+    vault_mqtt_command_cb_t command_callback;
+    void *command_user_data;
     bool connected;
     bool initialized;
 } vault_mqtt_t;

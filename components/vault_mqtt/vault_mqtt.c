@@ -9,10 +9,6 @@
 
 static const char *TAG = "vault_mqtt";
 
-// Static callback storage
-static vault_mqtt_command_cb_t s_command_callback = NULL;
-static void *s_command_user_data = NULL;
-
 /**
  * @brief MQTT event handler
  */
@@ -54,8 +50,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 }
                 
                 // Call user callback if registered
-                if (s_command_callback != NULL) {
-                    s_command_callback(&packet, s_command_user_data);
+                if (mqtt->command_callback != NULL) {
+                    mqtt->command_callback(&packet, mqtt->command_user_data);
                 }
             }
         }
@@ -220,8 +216,8 @@ void vault_mqtt_register_command_cb(vault_mqtt_t *mqtt,
         return;
     }
     
-    s_command_callback = callback;
-    s_command_user_data = user_data;
+    mqtt->command_callback = callback;
+    mqtt->command_user_data = user_data;
     
     ESP_LOGI(TAG, "Command callback registered");
 }

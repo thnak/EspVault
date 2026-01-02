@@ -40,15 +40,29 @@ vault_memory_t* vault_memory_init(void)
              VAULT_HISTORY_BUFFER_SIZE);
     
     // Create lock-free ring buffer for network queue (1MB in PSRAM)
+    uint8_t *ringbuf_storage = heap_caps_malloc(VAULT_NETWORK_QUEUE_SIZE,
+                                                 MALLOC_CAP_SPIRAM);
+    StaticRingbuffer_t *ringbuf_struct = heap_caps_malloc(sizeof(StaticRingbuffer_t),
+                                                           MALLOC_CAP_8BIT);
+    
+    if (ringbuf_storage == NULL || ringbuf_struct == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for ring buffer");
+        free(ringbuf_storage);
+        free(ringbuf_struct);
+        free(mem->history_buffer);
+        free(mem);
+        return NULL;
+    }
+    
     mem->network_queue = xRingbufferCreateStatic(VAULT_NETWORK_QUEUE_SIZE,
                                                   RINGBUF_TYPE_NOSPLIT,
-                                                  heap_caps_malloc(VAULT_NETWORK_QUEUE_SIZE,
-                                                                  MALLOC_CAP_SPIRAM),
-                                                  heap_caps_malloc(sizeof(StaticRingbuffer_t),
-                                                                  MALLOC_CAP_8BIT));
+                                                  ringbuf_storage,
+                                                  ringbuf_struct);
     
     if (mem->network_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create network queue ring buffer");
+        free(ringbuf_storage);
+        free(ringbuf_struct);
         free(mem->history_buffer);
         free(mem);
         return NULL;
@@ -139,8 +153,10 @@ bool vault_memory_find_by_seq(vault_memory_t *mem, uint32_t seq, vault_packet_t 
         return false;
     }
     
-    // Linear search through circular buffer
-    // In production, this could be optimized with an index structure
+    // Linear search through circular buffer - O(n)
+    // TODO: Optimize with B-tree or hash table for O(log n) or O(1) lookup
+    // This is acceptable for development but should be improved for production
+    // with high event rates or frequent replay requests
     uint32_t search_count = (mem->history_count < VAULT_HISTORY_MAX_ENTRIES) 
                            ? mem->history_count : VAULT_HISTORY_MAX_ENTRIES;
     

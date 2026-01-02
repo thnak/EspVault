@@ -179,10 +179,13 @@ static void wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     
     // TODO: Load WiFi credentials from NVS
+    // WARNING: These are placeholder values for development only.
+    // For production, use: CONFIG_VAULT_WIFI_SSID and CONFIG_VAULT_WIFI_PASSWORD
+    // or load from encrypted factory NVS partition
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = "YOUR_WIFI_SSID",
-            .password = "YOUR_WIFI_PASSWORD",
+            .ssid = "YOUR_WIFI_SSID",  // REPLACE WITH REAL SSID
+            .password = "YOUR_WIFI_PASSWORD",  // REPLACE WITH REAL PASSWORD
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
         },
     };
@@ -223,17 +226,22 @@ void app_main(void)
     wifi_init_sta();
     
     // Initialize MQTT client
+    // WARNING: These are placeholder values for development only.
+    // For production:
+    // 1. Enable TLS (.use_tls = true)
+    // 2. Load credentials from encrypted factory NVS
+    // 3. Use CONFIG_VAULT_MQTT_* settings from menuconfig
     vault_mqtt_config_t mqtt_config = {
-        .broker_uri = "mqtt://broker.example.com",
-        .client_id = "esp32_vault_001",
-        .username = NULL,
-        .password = NULL,
-        .ca_cert = NULL,
-        .port = 1883,
-        .use_tls = false,
+        .broker_uri = "mqtt://broker.example.com",  // REPLACE: Use mqtts:// for TLS
+        .client_id = "esp32_vault_001",  // REPLACE: Load from NVS
+        .username = NULL,  // REPLACE: Load from encrypted NVS
+        .password = NULL,  // REPLACE: Load from encrypted NVS
+        .ca_cert = NULL,   // REPLACE: Embed or load CA certificate
+        .port = 1883,      // REPLACE: Use 8883 for TLS
+        .use_tls = false,  // WARNING: Enable TLS for production
     };
     
-    // TODO: Load MQTT configuration from NVS
+    // TODO: Load MQTT configuration from encrypted factory NVS
     g_mqtt = vault_mqtt_init(&mqtt_config, g_memory);
     if (g_mqtt != NULL) {
         vault_mqtt_start(g_mqtt);
