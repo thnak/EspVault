@@ -1,0 +1,263 @@
+/**
+ * @file vault_mqtt.c
+ * @brief MQTT 5.0 Client Implementation for EspVault Universal Node
+ */
+
+#include "vault_mqtt.h"
+#include "esp_log.h"
+#include <string.h>
+
+static const char *TAG = "vault_mqtt";
+
+// Static callback storage
+static vault_mqtt_command_cb_t s_command_callback = NULL;
+static void *s_command_user_data = NULL;
+
+/**
+ * @brief MQTT event handler
+ */
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
+                               int32_t event_id, void *event_data)
+{
+    vault_mqtt_t *mqtt = (vault_mqtt_t *)handler_args;
+    esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
+    
+    switch ((esp_mqtt_event_id_t)event_id) {
+    case MQTT_EVENT_CONNECTED:
+        ESP_LOGI(TAG, "MQTT connected to broker");
+        mqtt->connected = true;
+        
+        // Subscribe to command topic
+        esp_mqtt_client_subscribe(mqtt->client, VAULT_MQTT_TOPIC_COMMAND, 1);
+        ESP_LOGI(TAG, "Subscribed to %s", VAULT_MQTT_TOPIC_COMMAND);
+        break;
+        
+    case MQTT_EVENT_DISCONNECTED:
+        ESP_LOGW(TAG, "MQTT disconnected from broker");
+        mqtt->connected = false;
+        break;
+        
+    case MQTT_EVENT_DATA:
+        ESP_LOGI(TAG, "MQTT data received on topic: %.*s", 
+                 event->topic_len, event->topic);
+        
+        // Parse command packet
+        if (strncmp(event->topic, VAULT_MQTT_TOPIC_COMMAND, event->topic_len) == 0) {
+            vault_packet_t packet;
+            if (vault_protocol_parse((uint8_t *)event->data, event->data_len, &packet)) {
+                // Handle replay command
+                if (packet.cmd == VAULT_CMD_REPLAY) {
+                    uint32_t seq_start = packet.seq;
+                    uint32_t seq_end = packet.val;  // End sequence in val field
+                    ESP_LOGI(TAG, "Replay command: %lu to %lu", seq_start, seq_end);
+                    vault_mqtt_handle_replay(mqtt, seq_start, seq_end);
+                }
+                
+                // Call user callback if registered
+                if (s_command_callback != NULL) {
+                    s_command_callback(&packet, s_command_user_data);
+                }
+            }
+        }
+        break;
+        
+    case MQTT_EVENT_ERROR:
+        ESP_LOGE(TAG, "MQTT error occurred");
+        if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+            ESP_LOGE(TAG, "Last error code reported from esp-tls: 0x%x", 
+                     event->error_handle->esp_tls_last_esp_err);
+            ESP_LOGE(TAG, "Last tls stack error number: 0x%x", 
+                     event->error_handle->esp_tls_stack_err);
+        }
+        break;
+        
+    default:
+        ESP_LOGD(TAG, "MQTT event id: %d", event_id);
+        break;
+    }
+}
+
+vault_mqtt_t* vault_mqtt_init(const vault_mqtt_config_t *config, vault_memory_t *memory)
+{
+    if (config == NULL || memory == NULL) {
+        ESP_LOGE(TAG, "Invalid parameters");
+        return NULL;
+    }
+    
+    vault_mqtt_t *mqtt = malloc(sizeof(vault_mqtt_t));
+    if (mqtt == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate MQTT handle");
+        return NULL;
+    }
+    
+    memset(mqtt, 0, sizeof(vault_mqtt_t));
+    mqtt->memory = memory;
+    
+    // Configure MQTT client
+    esp_mqtt_client_config_t mqtt_cfg = {
+        .broker.address.uri = config->broker_uri,
+        .credentials.client_id = config->client_id,
+        .credentials.username = config->username,
+        .credentials.authentication.password = config->password,
+        .session.protocol_ver = MQTT_PROTOCOL_V_5,  // MQTT 5.0
+    };
+    
+    // Add TLS configuration if enabled
+    if (config->use_tls && config->ca_cert != NULL) {
+        mqtt_cfg.broker.verification.certificate = config->ca_cert;
+        mqtt_cfg.broker.verification.skip_cert_common_name_check = false;
+    }
+    
+    mqtt->client = esp_mqtt_client_init(&mqtt_cfg);
+    if (mqtt->client == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize MQTT client");
+        free(mqtt);
+        return NULL;
+    }
+    
+    // Register event handler
+    esp_mqtt_client_register_event(mqtt->client, ESP_EVENT_ANY_ID, 
+                                   mqtt_event_handler, mqtt);
+    
+    mqtt->initialized = true;
+    ESP_LOGI(TAG, "MQTT client initialized");
+    
+    return mqtt;
+}
+
+void vault_mqtt_deinit(vault_mqtt_t *mqtt)
+{
+    if (mqtt == NULL) {
+        return;
+    }
+    
+    if (mqtt->client != NULL) {
+        esp_mqtt_client_destroy(mqtt->client);
+    }
+    
+    free(mqtt);
+    ESP_LOGI(TAG, "MQTT client deinitialized");
+}
+
+bool vault_mqtt_start(vault_mqtt_t *mqtt)
+{
+    if (mqtt == NULL || !mqtt->initialized) {
+        return false;
+    }
+    
+    esp_err_t err = esp_mqtt_client_start(mqtt->client);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    ESP_LOGI(TAG, "MQTT client started");
+    return true;
+}
+
+void vault_mqtt_stop(vault_mqtt_t *mqtt)
+{
+    if (mqtt == NULL || !mqtt->initialized) {
+        return;
+    }
+    
+    esp_mqtt_client_stop(mqtt->client);
+    mqtt->connected = false;
+    ESP_LOGI(TAG, "MQTT client stopped");
+}
+
+bool vault_mqtt_publish_event(vault_mqtt_t *mqtt, const vault_packet_t *packet)
+{
+    if (mqtt == NULL || !mqtt->initialized || !mqtt->connected || packet == NULL) {
+        return false;
+    }
+    
+    // Serialize packet to binary
+    uint8_t data[VAULT_PROTO_PACKET_SIZE];
+    size_t len = vault_protocol_serialize(packet, data);
+    
+    // Publish to event topic
+    int msg_id = esp_mqtt_client_publish(mqtt->client, VAULT_MQTT_TOPIC_EVENT,
+                                         (const char *)data, len, 1, 0);
+    
+    if (msg_id < 0) {
+        ESP_LOGE(TAG, "Failed to publish event");
+        return false;
+    }
+    
+    ESP_LOGD(TAG, "Published event, seq=%lu, msg_id=%d", packet->seq, msg_id);
+    return true;
+}
+
+bool vault_mqtt_publish_heartbeat(vault_mqtt_t *mqtt)
+{
+    if (mqtt == NULL || !mqtt->initialized || !mqtt->connected) {
+        return false;
+    }
+    
+    // Create heartbeat packet
+    vault_packet_t packet;
+    vault_protocol_init_packet(&packet, VAULT_CMD_HEARTBEAT, 
+                               vault_memory_get_next_seq(mqtt->memory));
+    vault_protocol_finalize_packet(&packet);
+    
+    // Serialize and publish
+    uint8_t data[VAULT_PROTO_PACKET_SIZE];
+    vault_protocol_serialize(&packet, data);
+    
+    int msg_id = esp_mqtt_client_publish(mqtt->client, VAULT_MQTT_TOPIC_HEARTBEAT,
+                                         (const char *)data, VAULT_PROTO_PACKET_SIZE, 
+                                         0, 0);
+    
+    return (msg_id >= 0);
+}
+
+void vault_mqtt_register_command_cb(vault_mqtt_t *mqtt, 
+                                     vault_mqtt_command_cb_t callback,
+                                     void *user_data)
+{
+    if (mqtt == NULL || !mqtt->initialized) {
+        return;
+    }
+    
+    s_command_callback = callback;
+    s_command_user_data = user_data;
+    
+    ESP_LOGI(TAG, "Command callback registered");
+}
+
+size_t vault_mqtt_handle_replay(vault_mqtt_t *mqtt, uint32_t seq_start, uint32_t seq_end)
+{
+    if (mqtt == NULL || !mqtt->initialized || !mqtt->connected) {
+        return 0;
+    }
+    
+    // Allocate buffer for replay packets
+    const size_t max_replay = 100;  // Replay up to 100 packets at a time
+    vault_packet_t *packets = malloc(max_replay * sizeof(vault_packet_t));
+    if (packets == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate replay buffer");
+        return 0;
+    }
+    
+    // Retrieve packets from history
+    size_t count = vault_memory_get_range(mqtt->memory, seq_start, seq_end, 
+                                          packets, max_replay);
+    
+    ESP_LOGI(TAG, "Replaying %d packets from %lu to %lu", count, seq_start, seq_end);
+    
+    // Mark packets as replayed and republish
+    for (size_t i = 0; i < count; i++) {
+        packets[i].flags |= VAULT_FLAG_IS_REPLAY;
+        vault_protocol_finalize_packet(&packets[i]);  // Recalculate CRC
+        vault_mqtt_publish_event(mqtt, &packets[i]);
+    }
+    
+    free(packets);
+    return count;
+}
+
+bool vault_mqtt_is_connected(vault_mqtt_t *mqtt)
+{
+    return (mqtt != NULL && mqtt->initialized && mqtt->connected);
+}
