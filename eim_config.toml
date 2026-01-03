@@ -1,10 +1,10 @@
 path = "/home/runner/esp/idf"
-idf_path = "/home/runner/esp/idf/v5.5/esp-idf"
+idf_path = "/home/runner/esp/idf/v5.2/esp-idf"
 esp_idf_json_path = "/home/runner/.espressif/tools"
 tool_download_folder_name = "/home/runner/.espressif/dist"
 tool_install_folder_name = "~/.espressif"
 target = ["all"]
-idf_versions = ["v5.5"]
+idf_versions = ["v5.2"]
 tools_json_file = "tools/tools.json"
 config_file_save_path = "eim_config.toml"
 non_interactive = true
@@ -20,4 +20,4 @@ activation_script_path_override = "/home/runner/.espressif/tools"
 python_version_override = "python313"
 
 [idf_features_per_version]
-"v5.5" = ["core"]
+"v5.2" = ["core"]
