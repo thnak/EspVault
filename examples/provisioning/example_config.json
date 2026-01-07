@@ -1,0 +1,15 @@
+{
+  "id": 100,
+  "wifi": {
+    "s": "YourWiFiSSID",
+    "p": "YourWiFiPassword"
+  },
+  "ip": {
+    "t": "d"
+  },
+  "mqtt": {
+    "u": "mqtt://broker.example.com",
+    "port": 1883,
+    "ssl": false
+  }
+}
