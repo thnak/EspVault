@@ -14,6 +14,7 @@ The current implementation has placeholder TODOs for MQTT v5 Response Topic and 
 Without proper MQTT v5 property handling:
 - Response Topic must be constructed from device MAC (works but not optimal)
 - Correlation Data won't be included in responses (breaks correlation)
+- Clients cannot correlate responses to their original requests
 
 ### Solution Required
 Implement proper MQTT v5 property extraction using ESP-IDF MQTT v5 API:
@@ -49,22 +50,53 @@ esp_mqtt_client_enqueue(mqtt->client, topic, payload,
 - [ ] Test correlation data round-trip
 
 ### Priority
-**HIGH** - Required for production use, but current fallback implementation allows basic functionality.
+**CRITICAL** - Required for production use. Current fallback implementation allows basic functionality but breaks proper request-response correlation.
 
 ## Task Handle Export
 
 ### Issue
-Task handles are exported as global variables for provisioning to suspend/resume them.
+Task handles are exported as global variables for provisioning to suspend/resume them. This creates tight coupling between main.c and vault_provisioning component.
 
 ### Location
 `main/main.c`: Lines 28-31
+`components/vault_provisioning/vault_provisioning.c`: Lines 42-48
 
 ### Impact
 - Allows provisioning to free resources during setup mode
 - May cause issues if tasks are not properly initialized
+- Reduces modularity and testability of the provisioning component
+- Creates tight coupling between components
 
-### Solution
-Already implemented with NULL checks in vault_provisioning.c
+### Solution (Future Refactoring)
+Consider one of these approaches:
+1. Pass task handles via initialization function:
+   ```c
+   vault_provisioning_t* vault_provisioning_init(
+       vault_mqtt_t *mqtt, 
+       vault_memory_t *memory,
+       TaskHandle_t *task_handles,
+       size_t num_handles
+   );
+   ```
+
+2. Implement a task manager interface:
+   ```c
+   typedef struct {
+       esp_err_t (*suspend_tasks)(void);
+       esp_err_t (*resume_tasks)(void);
+   } task_manager_t;
+   
+   vault_provisioning_t* vault_provisioning_init(
+       vault_mqtt_t *mqtt,
+       vault_memory_t *memory,
+       task_manager_t *task_mgr
+   );
+   ```
+
+### Current Status
+- ✅ NULL checks implemented in vault_provisioning.c
+- ✅ Comment added about coupling issue
+- ⚠️ Consider refactoring for better modularity
 
 ### Testing Status
 - [ ] Test setup mode with active tasks
@@ -121,28 +153,57 @@ Already documented in `sdkconfig.defaults` and `docs/REMOTE_PROVISIONING.md`
 ## WiFi Connection Testing
 
 ### Issue
-WiFi validation is format-only, doesn't actually test connection.
+Function name `vault_provisioning_test_wifi()` suggests actual connection testing, but implementation only validates configuration format. This is misleading and doesn't prevent invalid credentials.
 
 ### Location
 `components/vault_provisioning/vault_provisioning.c`: vault_provisioning_test_wifi()
 
 ### Impact
+- Function name is misleading
 - Can't verify credentials before committing
-- May require second provisioning attempt if wrong
+- May require second provisioning attempt if credentials are wrong
+- No protection against typos in SSID/password
 
-### Solution (Future Enhancement)
+### Solution (Current - Format Validation)
+The current implementation validates:
+- SSID is not empty
+- Static IP configuration completeness (if specified)
+
+This prevents obvious configuration errors but doesn't test actual connectivity.
+
+### Solution (Future Enhancement - Actual Testing)
 Implement actual connection test:
-- Temporarily connect to test network
-- Verify connectivity
-- Disconnect and return to staging network
-- Only commit if successful
+1. Save current WiFi state
+2. Temporarily disconnect from staging network
+3. Attempt connection to test network
+4. Verify connectivity (ping gateway or DHCP)
+5. Disconnect from test network
+6. Restore staging network connection
+7. Only commit if successful
 
 **Complexity**: High - requires careful WiFi state management
+**Risk**: Could brick device if not implemented carefully
+
+### Alternative Approach
+Rename function to reflect actual behavior:
+```c
+// From:
+esp_err_t vault_provisioning_test_wifi(...)
+
+// To:
+esp_err_t vault_provisioning_validate_wifi_config(...)
+```
+
+This makes the function purpose clear and sets correct expectations.
 
 ### Testing Status
 - [ ] Design safe WiFi switching mechanism
-- [ ] Implement connection test
+- [ ] Implement connection test (if desired)
 - [ ] Add timeout and retry logic
+- [ ] Consider function rename for clarity
+
+### Priority
+**MEDIUM** - Current validation prevents obvious errors. Full connection testing is enhancement.
 
 ## MQTT Connection Testing
 
@@ -178,11 +239,21 @@ Throughout `vault_provisioning.c`
 - ✅ Using heap_caps_malloc with MALLOC_CAP_SPIRAM
 - ✅ Proper free() calls in vault_provisioning_free_config()
 - ✅ Memory reporting in responses
+- ✅ Error logging for allocation failures (added)
+
+### Certificate Allocation
+Certificate allocation failures are now logged but don't fail the entire configuration parsing. This allows:
+- Configuration to proceed without SSL if cert allocation fails
+- User to see error in logs
+- Possibly reduce cert size and retry
+
+**Note**: If SSL is required, the connection will fail later during MQTT connection test. Consider adding a validation step to check if SSL is enabled but certs failed to allocate.
 
 ### Testing Needed
 - [ ] Test with maximum payload sizes
 - [ ] Monitor PSRAM fragmentation
 - [ ] Test multiple provisioning cycles
+- [ ] Test behavior when SSL enabled but cert allocation fails
 
 ## Python Script Dependencies
 

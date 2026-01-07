@@ -40,6 +40,9 @@ struct vault_provisioning_s {
 };
 
 // External task handles (from main.c)
+// NOTE: This creates tight coupling with main.c. In future refactoring,
+// consider passing these handles via initialization function or implementing
+// a task manager interface for better modularity and testability.
 extern TaskHandle_t capture_task_handle;
 extern TaskHandle_t logic_task_handle;
 extern TaskHandle_t health_task_handle;
@@ -287,7 +290,12 @@ esp_err_t vault_provisioning_parse_config(const char *json_str, size_t len,
                                                             MALLOC_CAP_SPIRAM);
                     if (config->mqtt.ca_cert) {
                         strcpy(config->mqtt.ca_cert, cert->valuestring);
+                    } else {
+                        ESP_LOGE(TAG, "Failed to allocate memory for CA certificate");
                     }
+                } else {
+                    ESP_LOGE(TAG, "CA certificate too large: %d bytes (max: %d)",
+                             cert_len, VAULT_PROV_MAX_CERT_LEN);
                 }
             }
             
@@ -298,7 +306,12 @@ esp_err_t vault_provisioning_parse_config(const char *json_str, size_t len,
                                                                MALLOC_CAP_SPIRAM);
                     if (config->mqtt.client_key) {
                         strcpy(config->mqtt.client_key, key->valuestring);
+                    } else {
+                        ESP_LOGE(TAG, "Failed to allocate memory for client key");
                     }
+                } else {
+                    ESP_LOGE(TAG, "Client key too large: %d bytes (max: %d)",
+                             key_len, VAULT_PROV_MAX_KEY_LEN);
                 }
             }
         }

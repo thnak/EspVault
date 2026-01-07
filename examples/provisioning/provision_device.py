@@ -144,7 +144,7 @@ class DeviceProvisioner:
         
         # Create MQTT client with v5 protocol
         self.client = mqtt.Client(
-            client_id=f"provisioner_{uuid.uuid4().hex[:8]}",
+            client_id=f"provisioner_{uuid.uuid4().hex}",  # Full UUID for uniqueness
             protocol=mqtt.MQTTv5
         )
         
