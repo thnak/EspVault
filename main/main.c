@@ -48,9 +48,9 @@ static vault_provisioning_t *g_provisioning = NULL;
 #define NETWORK_TASK_PRIORITY    5
 #define HEALTH_TASK_PRIORITY     1
 
-// Core assignments
-#define PRO_CPU_NUM              0
-#define APP_CPU_NUM              1
+// Core assignments are defined in soc/soc.h:
+// PRO_CPU_NUM (0) - Protocol CPU (Core 0)
+// APP_CPU_NUM (1) - Application CPU (Core 1)
 
 /**
  * @brief Capture Task - Handles RMT interrupts and raw hardware pulse timing
