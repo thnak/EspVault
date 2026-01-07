@@ -5,6 +5,7 @@
 
 #include "vault_mqtt.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include <string.h>
 
 static const char *TAG = "vault_mqtt";
@@ -26,6 +27,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         // Subscribe to command topic
         esp_mqtt_client_subscribe(mqtt->client, VAULT_MQTT_TOPIC_COMMAND, 1);
         ESP_LOGI(TAG, "Subscribed to %s", VAULT_MQTT_TOPIC_COMMAND);
+        
+        // Subscribe to provisioning topic if MAC is available
+        if (mqtt->device_mac) {
+            vault_mqtt_subscribe_provisioning(mqtt);
+        }
         break;
         
     case MQTT_EVENT_DISCONNECTED:
@@ -37,8 +43,42 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         ESP_LOGI(TAG, "MQTT data received on topic: %.*s", 
                  event->topic_len, event->topic);
         
+        // Check if this is a provisioning message
+        if (mqtt->device_mac && 
+            strncmp(event->topic, VAULT_MQTT_TOPIC_PROV_CFG, 
+                    strlen(VAULT_MQTT_TOPIC_PROV_CFG)) == 0) {
+            
+            // Extract MQTT v5 properties
+            const char *response_topic = NULL;
+            const char *correlation_data = NULL;
+            
+            // Get MQTT v5 properties if available
+            if (event->property) {
+                esp_mqtt5_client_get_publish_property(mqtt->client, event->property,
+                                                      MQTT_PROP_TYPE_RESPONSE_TOPIC,
+                                                      (void **)&response_topic);
+                esp_mqtt5_client_get_publish_property(mqtt->client, event->property,
+                                                      MQTT_PROP_TYPE_CORRELATION_DATA,
+                                                      (void **)&correlation_data);
+            }
+            
+            ESP_LOGI(TAG, "Provisioning message received");
+            if (response_topic) {
+                ESP_LOGI(TAG, "Response Topic: %s", response_topic);
+            }
+            if (correlation_data) {
+                ESP_LOGI(TAG, "Correlation Data: %s", correlation_data);
+            }
+            
+            // Call provisioning callback
+            if (mqtt->prov_callback) {
+                mqtt->prov_callback(event->data, event->data_len,
+                                  response_topic, correlation_data,
+                                  mqtt->prov_user_data);
+            }
+        }
         // Parse command packet
-        if (strncmp(event->topic, VAULT_MQTT_TOPIC_COMMAND, event->topic_len) == 0) {
+        else if (strncmp(event->topic, VAULT_MQTT_TOPIC_COMMAND, event->topic_len) == 0) {
             vault_packet_t packet;
             if (vault_protocol_parse((uint8_t *)event->data, event->data_len, &packet)) {
                 // Handle replay command
@@ -89,6 +129,16 @@ vault_mqtt_t* vault_mqtt_init(const vault_mqtt_config_t *config, vault_memory_t 
     memset(mqtt, 0, sizeof(vault_mqtt_t));
     mqtt->memory = memory;
     
+    // Get device MAC address for provisioning topics
+    mqtt->device_mac = malloc(18);
+    if (mqtt->device_mac) {
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        snprintf(mqtt->device_mac, 18, "%02x%02x%02x%02x%02x%02x",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        ESP_LOGI(TAG, "Device MAC: %s", mqtt->device_mac);
+    }
+    
     // Configure MQTT client
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = config->broker_uri,
@@ -107,6 +157,7 @@ vault_mqtt_t* vault_mqtt_init(const vault_mqtt_config_t *config, vault_memory_t 
     mqtt->client = esp_mqtt_client_init(&mqtt_cfg);
     if (mqtt->client == NULL) {
         ESP_LOGE(TAG, "Failed to initialize MQTT client");
+        if (mqtt->device_mac) free(mqtt->device_mac);
         free(mqtt);
         return NULL;
     }
@@ -129,6 +180,10 @@ void vault_mqtt_deinit(vault_mqtt_t *mqtt)
     
     if (mqtt->client != NULL) {
         esp_mqtt_client_destroy(mqtt->client);
+    }
+    
+    if (mqtt->device_mac != NULL) {
+        free(mqtt->device_mac);
     }
     
     free(mqtt);
@@ -256,4 +311,91 @@ size_t vault_mqtt_handle_replay(vault_mqtt_t *mqtt, uint32_t seq_start, uint32_t
 bool vault_mqtt_is_connected(vault_mqtt_t *mqtt)
 {
     return (mqtt != NULL && mqtt->initialized && mqtt->connected);
+}
+
+void vault_mqtt_register_provisioning_cb(vault_mqtt_t *mqtt,
+                                         vault_mqtt_provisioning_cb_t callback,
+                                         void *user_data)
+{
+    if (mqtt == NULL || !mqtt->initialized) {
+        return;
+    }
+    
+    mqtt->prov_callback = callback;
+    mqtt->prov_user_data = user_data;
+    
+    ESP_LOGI(TAG, "Provisioning callback registered");
+}
+
+bool vault_mqtt_publish_response(vault_mqtt_t *mqtt,
+                                 const char *response_topic,
+                                 const char *correlation_data,
+                                 const char *payload,
+                                 int qos)
+{
+    if (mqtt == NULL || !mqtt->initialized || !mqtt->connected) {
+        return false;
+    }
+    
+    if (payload == NULL) {
+        return false;
+    }
+    
+    // Use provided response topic or construct default
+    char topic[128];
+    if (response_topic != NULL) {
+        strncpy(topic, response_topic, sizeof(topic) - 1);
+    } else if (mqtt->device_mac) {
+        snprintf(topic, sizeof(topic), "%s%s", 
+                 VAULT_MQTT_TOPIC_PROV_RES, mqtt->device_mac);
+    } else {
+        ESP_LOGE(TAG, "No response topic available");
+        return false;
+    }
+    
+    // Create MQTT v5 properties for correlation data
+    esp_mqtt5_publish_property_config_t property = {0};
+    if (correlation_data != NULL) {
+        property.correlation_data = correlation_data;
+        property.correlation_data_len = strlen(correlation_data);
+    }
+    
+    // Publish with properties
+    int msg_id = esp_mqtt_client_publish(mqtt->client, topic,
+                                         payload, strlen(payload),
+                                         qos, 0);
+    
+    if (msg_id < 0) {
+        ESP_LOGE(TAG, "Failed to publish response");
+        return false;
+    }
+    
+    ESP_LOGI(TAG, "Published response to %s, msg_id=%d", topic, msg_id);
+    return true;
+}
+
+bool vault_mqtt_subscribe_provisioning(vault_mqtt_t *mqtt)
+{
+    if (mqtt == NULL || !mqtt->initialized || !mqtt->connected) {
+        return false;
+    }
+    
+    if (mqtt->device_mac == NULL) {
+        ESP_LOGE(TAG, "Device MAC not available");
+        return false;
+    }
+    
+    // Construct provisioning topic: dev/cfg/[MAC]
+    char topic[64];
+    snprintf(topic, sizeof(topic), "%s%s", 
+             VAULT_MQTT_TOPIC_PROV_CFG, mqtt->device_mac);
+    
+    int msg_id = esp_mqtt_client_subscribe(mqtt->client, topic, 1);
+    if (msg_id < 0) {
+        ESP_LOGE(TAG, "Failed to subscribe to provisioning topic");
+        return false;
+    }
+    
+    ESP_LOGI(TAG, "Subscribed to provisioning topic: %s", topic);
+    return true;
 }

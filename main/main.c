@@ -21,18 +21,20 @@
 #include "vault_protocol.h"
 #include "vault_memory.h"
 #include "vault_mqtt.h"
+#include "vault_provisioning.h"
 
 static const char *TAG = "main";
 
-// Task handles
-static TaskHandle_t capture_task_handle = NULL;
-static TaskHandle_t logic_task_handle = NULL;
-static TaskHandle_t network_task_handle = NULL;
-static TaskHandle_t health_task_handle = NULL;
+// Task handles (exported for provisioning)
+TaskHandle_t capture_task_handle = NULL;
+TaskHandle_t logic_task_handle = NULL;
+TaskHandle_t network_task_handle = NULL;
+TaskHandle_t health_task_handle = NULL;
 
 // Global handles
 static vault_memory_t *g_memory = NULL;
 static vault_mqtt_t *g_mqtt = NULL;
+static vault_provisioning_t *g_provisioning = NULL;
 
 // Task stack sizes
 #define CAPTURE_TASK_STACK_SIZE  4096
@@ -198,6 +200,51 @@ static void wifi_init_sta(void)
 }
 
 /**
+ * @brief Provisioning callback handler for MQTT v5 messages
+ */
+static void provisioning_message_handler(const char *data, int data_len,
+                                        const char *response_topic,
+                                        const char *correlation_data,
+                                        void *user_data)
+{
+    ESP_LOGI(TAG, "Provisioning message received (%d bytes)", data_len);
+    
+    if (g_provisioning == NULL) {
+        ESP_LOGE(TAG, "Provisioning manager not initialized");
+        return;
+    }
+    
+    // Enter setup mode to free resources
+    vault_provisioning_enter_setup_mode(g_provisioning);
+    
+    // Parse configuration
+    vault_prov_config_t config;
+    esp_err_t ret = vault_provisioning_parse_config(data, data_len, &config);
+    
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to parse provisioning configuration");
+        vault_provisioning_send_response(g_provisioning, response_topic,
+                                        correlation_data,
+                                        VAULT_PROV_STATUS_PARSE_ERROR,
+                                        "Failed to parse JSON configuration");
+        vault_provisioning_exit_setup_mode(g_provisioning);
+        return;
+    }
+    
+    // Apply configuration (this will test and save)
+    ret = vault_provisioning_apply_config(g_provisioning, &config, correlation_data);
+    
+    // Free allocated resources
+    vault_provisioning_free_config(&config);
+    
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to apply configuration");
+        vault_provisioning_exit_setup_mode(g_provisioning);
+    }
+    // Note: If successful, device will restart before exiting setup mode
+}
+
+/**
  * @brief Main application entry point
  */
 void app_main(void)
@@ -248,6 +295,20 @@ void app_main(void)
         ESP_LOGI(TAG, "MQTT client started");
     } else {
         ESP_LOGW(TAG, "Failed to initialize MQTT client");
+    }
+    
+    // Initialize provisioning manager
+    if (g_mqtt != NULL) {
+        g_provisioning = vault_provisioning_init(g_mqtt, g_memory);
+        if (g_provisioning != NULL) {
+            // Register provisioning callback
+            vault_mqtt_register_provisioning_cb(g_mqtt, 
+                                               provisioning_message_handler,
+                                               NULL);
+            ESP_LOGI(TAG, "Provisioning manager initialized");
+        } else {
+            ESP_LOGW(TAG, "Failed to initialize provisioning manager");
+        }
     }
     
     // Create dual-core tasks
