@@ -5,6 +5,7 @@ This directory contains example scripts and configurations for remote provisioni
 ## Files
 
 - `provision_device.py` - Python script for sending provisioning commands
+- `test_broker.py` - MQTT v5 test broker monitor for development/testing
 - `example_config.json` - Basic configuration example (DHCP, no SSL)
 - `example_config_ssl.json` - Advanced configuration with SSL/TLS
 
@@ -73,6 +74,59 @@ python provision_device.py \
   --user admin \
   --pass secret123
 ```
+
+## Testing with Test Broker
+
+For development and testing without actual ESP32 hardware, use the test broker monitor:
+
+### 1. Start Test Broker
+
+```bash
+python test_broker.py
+```
+
+This will:
+- Connect to MQTT broker (default: localhost:1883)
+- Subscribe to all `dev/cfg/#` and `dev/res/#` topics
+- Monitor and display all provisioning traffic
+- Show device responses with formatted JSON
+
+### 2. Test with Postman
+
+1. Install Postman and enable MQTT support
+2. Create new MQTT request:
+   - Protocol: **MQTT 5.0**
+   - Broker: `mqtt://localhost:1883`
+   - Topic: `dev/cfg/aabbccddeeff` (replace with your test MAC)
+3. Add MQTT v5 Properties:
+   - **Response Topic**: `dev/res/aabbccddeeff`
+   - **Correlation Data**: `test-session-123`
+4. Set payload to JSON configuration (see example_config.json)
+5. Publish message
+
+The test broker will show both the config command and the (simulated) device response.
+
+### 3. Test with mosquitto_pub
+
+```bash
+mosquitto_pub -h localhost -t 'dev/cfg/aabbccddeeff' \
+  -q 1 -V 5 \
+  -D PUBLISH response-topic 'dev/res/aabbccddeeff' \
+  -D PUBLISH correlation-data 'test-123' \
+  -m '{"id":100,"wifi":{"s":"TestNet","p":"Pass"},"ip":{"t":"d"},"mqtt":{"u":"mqtt://broker","port":1883,"ssl":false}}'
+```
+
+### Test Broker Features
+
+- **Real-time monitoring**: See all provisioning traffic
+- **JSON formatting**: Automatically formats responses
+- **Status tracking**: Shows success/failure status for each device
+- **Memory reports**: Displays device memory information
+- **Command line options**:
+  ```bash
+  python test_broker.py --broker staging.local --port 1883
+  python test_broker.py --usage  # Show detailed usage examples
+  ```
 
 ## Expected Output
 
