@@ -1,1 +1,2 @@
-
+## Environment
+This environment uses the espressif/idf:release-v5.4 container. You can use all available command-line development tools from it like idf.py set-target, idf.py build., idf.py flash, idf.py monitor, cmake, ninja, etc.
