@@ -124,7 +124,7 @@ static void network_task(void *pvParameters)
             // Publish to MQTT broker
             if (g_mqtt != NULL && vault_mqtt_is_connected(g_mqtt)) {
                 vault_mqtt_publish_event(g_mqtt, &packet);
-                ESP_LOGD(TAG, "Published event seq=%lu", packet.seq);
+                ESP_LOGD(TAG, "Published event seq=%u", (unsigned int)packet.seq);
             } else {
                 ESP_LOGW(TAG, "MQTT not connected, event buffered");
             }
@@ -160,9 +160,9 @@ static void health_task(void *pvParameters)
         }
         
         // Report system health metrics
-        ESP_LOGI(TAG, "Free heap: %lu bytes, Free PSRAM: %lu bytes",
-                 esp_get_free_heap_size(),
-                 heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        ESP_LOGI(TAG, "Free heap: %u bytes, Free PSRAM: %u bytes",
+                 (unsigned int)esp_get_free_heap_size(),
+                 (unsigned int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
         
         vTaskDelay(pdMS_TO_TICKS(10000));  // Check every 10 seconds
     }

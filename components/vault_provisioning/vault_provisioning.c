@@ -49,7 +49,10 @@ extern TaskHandle_t health_task_handle;
 
 /**
  * @brief WiFi event handler for provisioning tests
+ * 
+ * TODO: This will be used when actual WiFi connection testing is implemented
  */
+__attribute__((unused))
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
@@ -142,9 +145,9 @@ esp_err_t vault_provisioning_enter_setup_mode(vault_provisioning_t *prov)
     }
     
     // Log memory status
-    ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
-    ESP_LOGI(TAG, "Free PSRAM: %lu bytes", 
-             heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    ESP_LOGI(TAG, "Free heap: %u bytes", (unsigned int)esp_get_free_heap_size());
+    ESP_LOGI(TAG, "Free PSRAM: %u bytes", 
+             (unsigned int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     
     prov->in_setup_mode = true;
     ESP_LOGI(TAG, "Setup mode active - resources freed for provisioning");
@@ -332,7 +335,7 @@ esp_err_t vault_provisioning_parse_config(const char *json_str, size_t len,
     cJSON_Delete(root);
     
     ESP_LOGI(TAG, "Configuration parsed successfully");
-    ESP_LOGI(TAG, "  Config ID: %lu", config->config_id);
+    ESP_LOGI(TAG, "  Config ID: %u", (unsigned int)config->config_id);
     ESP_LOGI(TAG, "  WiFi SSID: %s", config->wifi.ssid);
     ESP_LOGI(TAG, "  MQTT URI: %s", config->mqtt.broker_uri);
     ESP_LOGI(TAG, "  MQTT Port: %d", config->mqtt.port);

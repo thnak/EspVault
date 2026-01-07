@@ -81,7 +81,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 if (packet.cmd == VAULT_CMD_REPLAY) {
                     uint32_t seq_start = packet.seq;
                     uint32_t seq_end = packet.val;  // End sequence in val field
-                    ESP_LOGI(TAG, "Replay command: %lu to %lu", seq_start, seq_end);
+                    ESP_LOGI(TAG, "Replay command: %u to %u", 
+                             (unsigned int)seq_start, (unsigned int)seq_end);
                     vault_mqtt_handle_replay(mqtt, seq_start, seq_end);
                 }
                 
@@ -104,7 +105,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         break;
         
     default:
-        ESP_LOGD(TAG, "MQTT event id: %d", event_id);
+        ESP_LOGD(TAG, "MQTT event id: %d", (int)event_id);
         break;
     }
 }
@@ -232,7 +233,8 @@ bool vault_mqtt_publish_event(vault_mqtt_t *mqtt, const vault_packet_t *packet)
         return false;
     }
     
-    ESP_LOGD(TAG, "Published event, seq=%lu, msg_id=%d", packet->seq, msg_id);
+    ESP_LOGD(TAG, "Published event, seq=%u, msg_id=%d", 
+             (unsigned int)packet->seq, msg_id);
     return true;
 }
 
@@ -291,7 +293,8 @@ size_t vault_mqtt_handle_replay(vault_mqtt_t *mqtt, uint32_t seq_start, uint32_t
     size_t count = vault_memory_get_range(mqtt->memory, seq_start, seq_end, 
                                           packets, max_replay);
     
-    ESP_LOGI(TAG, "Replaying %d packets from %lu to %lu", count, seq_start, seq_end);
+    ESP_LOGI(TAG, "Replaying %d packets from %u to %u", 
+             (int)count, (unsigned int)seq_start, (unsigned int)seq_end);
     
     // Mark packets as replayed and republish
     for (size_t i = 0; i < count; i++) {
