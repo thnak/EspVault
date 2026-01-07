@@ -65,14 +65,6 @@ typedef struct {
 } vault_mqtt_t;
 
 /**
- * @brief Command callback function type
- * 
- * @param packet Received command packet
- * @param user_data User-provided context
- */
-typedef void (*vault_mqtt_command_cb_t)(const vault_packet_t *packet, void *user_data);
-
-/**
  * @brief Register callback for provisioning messages (MQTT v5)
  * 
  * @param mqtt MQTT client handle

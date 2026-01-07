@@ -48,19 +48,15 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             strncmp(event->topic, VAULT_MQTT_TOPIC_PROV_CFG, 
                     strlen(VAULT_MQTT_TOPIC_PROV_CFG)) == 0) {
             
-            // Extract MQTT v5 properties
+            // Extract MQTT v5 properties if available
+            // Note: Response topic and correlation data extraction requires
+            // proper MQTT v5 property parsing. For now, we construct the
+            // response topic from the device MAC.
             const char *response_topic = NULL;
             const char *correlation_data = NULL;
             
-            // Get MQTT v5 properties if available
-            if (event->property) {
-                esp_mqtt5_client_get_publish_property(mqtt->client, event->property,
-                                                      MQTT_PROP_TYPE_RESPONSE_TOPIC,
-                                                      (void **)&response_topic);
-                esp_mqtt5_client_get_publish_property(mqtt->client, event->property,
-                                                      MQTT_PROP_TYPE_CORRELATION_DATA,
-                                                      (void **)&correlation_data);
-            }
+            // TODO: Extract MQTT v5 properties from event->property
+            // This requires proper implementation based on ESP-IDF MQTT v5 API
             
             ESP_LOGI(TAG, "Provisioning message received");
             if (response_topic) {
@@ -353,14 +349,10 @@ bool vault_mqtt_publish_response(vault_mqtt_t *mqtt,
         return false;
     }
     
-    // Create MQTT v5 properties for correlation data
-    esp_mqtt5_publish_property_config_t property = {0};
-    if (correlation_data != NULL) {
-        property.correlation_data = correlation_data;
-        property.correlation_data_len = strlen(correlation_data);
-    }
+    // TODO: Add MQTT v5 properties for correlation data
+    // This requires proper implementation based on ESP-IDF MQTT v5 API
     
-    // Publish with properties
+    // Publish response
     int msg_id = esp_mqtt_client_publish(mqtt->client, topic,
                                          payload, strlen(payload),
                                          qos, 0);
