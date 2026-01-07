@@ -73,8 +73,9 @@ EspVault/
 # Set target
 idf.py set-target esp32
 
-# Configure project
-idf.py menuconfig
+# Clean build (recommended for first build or after updates)
+idf.py fullclean
+rm -f sdkconfig sdkconfig.old
 
 # Build
 idf.py build
@@ -82,6 +83,8 @@ idf.py build
 # Flash
 idf.py flash monitor
 ```
+
+**Build Issues?** See [Build Troubleshooting Guide](docs/BUILD_TROUBLESHOOTING.md) for common problems and solutions.
 
 ### Key Configuration Options
 
