@@ -538,10 +538,17 @@ esp_err_t vault_provisioning_send_response(vault_provisioning_t *prov,
     
     ESP_LOGI(TAG, "Sending response: %s", json_str);
     
-    // TODO: Publish to response topic via MQTT
-    // For now, just log it
+    // Publish response via MQTT
+    bool success = vault_mqtt_publish_response(prov->mqtt, response_topic,
+                                               correlation_id, json_str, 1);
     
     free(json_str);
+    
+    if (!success) {
+        ESP_LOGE(TAG, "Failed to publish response via MQTT");
+        return ESP_FAIL;
+    }
+    
     return ESP_OK;
 }
 
