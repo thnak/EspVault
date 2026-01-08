@@ -192,10 +192,20 @@ See documentation:
 - Sequence counter logic
 - Memory management unit tests
 
-### Tier 2: QEMU
+### Tier 2: QEMU ✅
 - Bootloader validation
 - Partition table verification
 - NVS operations
+- Provisioning configuration tests
+- Memory management validation
+
+**Run QEMU tests**:
+```bash
+cd test/qemu
+./run_qemu_tests.sh
+```
+
+See [QEMU Test Documentation](test/qemu/README.md) for details.
 
 ### Tier 3: Wokwi CI
 - Hardware-in-loop simulation
