@@ -167,7 +167,10 @@ python examples/provisioning/provision_device.py \
   --broker staging.local
 ```
 
-See [Remote Provisioning Guide](docs/REMOTE_PROVISIONING.md) for complete documentation.
+See documentation:
+- [Remote Provisioning Guide](docs/REMOTE_PROVISIONING.md) - Complete workflow and API
+- [Default Configuration Guide](docs/DEFAULT_CONFIGURATION.md) - How to set staging credentials
+- [Provisioning Examples](docs/PROVISIONING_EXAMPLES.md) - Payload examples and common issues
 
 ## Development Milestones
 
