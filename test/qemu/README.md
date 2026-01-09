@@ -9,6 +9,9 @@ QEMU tests run in an emulated ESP32 environment without requiring physical hardw
 - **NVS Operations**: Storage and retrieval of configuration data
 - **Memory Management**: Heap and PSRAM allocation
 - **Provisioning**: JSON parsing, configuration validation, save/load operations
+- **Network & Ethernet**: Connectivity testing using QEMU's user-mode networking
+- **MQTT Communication**: Real broker connectivity and pub/sub testing
+- **Integration**: End-to-end provisioning workflows
 - **Bootloader**: Partition table and flash layout verification
 
 ## Prerequisites
@@ -36,15 +39,29 @@ test/qemu/
 
 ## Running Tests
 
-### Quick Start
+### Quick Start - Basic Tests
 
 ```bash
 # Navigate to test directory
 cd test/qemu
 
-# Run tests
+# Run basic tests (NVS, Memory, Provisioning)
 ./run_qemu_tests.sh
 ```
+
+### Network Tests with MQTT Broker
+
+To test real network connectivity and MQTT communication:
+
+```bash
+# Run tests with automated broker setup
+./run_network_tests.sh
+
+# Or with clean build
+./run_network_tests.sh --clean
+```
+
+See [NETWORK_TESTING.md](NETWORK_TESTING.md) for detailed network testing guide.
 
 ### Manual Execution
 

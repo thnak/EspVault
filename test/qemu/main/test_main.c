@@ -30,6 +30,16 @@ extern void test_provisioning_mqtt_config(void);
 extern void test_provisioning_save_load(void);
 extern void test_memory_allocation(void);
 extern void test_memory_heap_caps(void);
+extern void test_network_ethernet_init(void);
+extern void test_network_ethernet_connect(void);
+extern void test_network_mqtt_connect(void);
+extern void test_network_mqtt_pubsub(void);
+extern void test_network_cleanup(void);
+extern void test_network_info(void);
+extern void test_integration_full_provisioning_flow(void);
+extern void test_integration_provisioning_with_ssl(void);
+extern void test_integration_provisioning_failure_recovery(void);
+extern void test_integration_network_simulation_info(void);
 
 void setUp(void)
 {
@@ -121,6 +131,28 @@ void app_main(void)
     RUN_TEST(test_provisioning_wifi_config);
     RUN_TEST(test_provisioning_mqtt_config);
     RUN_TEST(test_provisioning_save_load);
+    
+    /* ============================================ */
+    /* Test Suite 4: Network & Ethernet            */
+    /* ============================================ */
+    print_test_banner("Test Suite 4: Network & Ethernet (QEMU)");
+    
+    RUN_TEST(test_network_info);
+    RUN_TEST(test_network_ethernet_init);
+    RUN_TEST(test_network_ethernet_connect);
+    RUN_TEST(test_network_mqtt_connect);
+    RUN_TEST(test_network_mqtt_pubsub);
+    RUN_TEST(test_network_cleanup);
+    
+    /* ============================================ */
+    /* Test Suite 5: Integration Tests             */
+    /* ============================================ */
+    print_test_banner("Test Suite 5: Integration Tests");
+    
+    RUN_TEST(test_integration_network_simulation_info);
+    RUN_TEST(test_integration_full_provisioning_flow);
+    RUN_TEST(test_integration_provisioning_with_ssl);
+    RUN_TEST(test_integration_provisioning_failure_recovery);
     
     /* ============================================ */
     /* Test Complete                                */
