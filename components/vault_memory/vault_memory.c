@@ -80,7 +80,8 @@ vault_memory_t* vault_memory_init(void)
     mem->seq_last_synced = mem->seq_counter;
     mem->initialized = true;
     
-    ESP_LOGI(TAG, "Memory manager initialized, starting sequence: %lu", mem->seq_counter);
+    ESP_LOGI(TAG, "Memory manager initialized, starting sequence: %u", 
+             (unsigned int)mem->seq_counter);
     
     return mem;
 }
@@ -258,7 +259,8 @@ bool vault_memory_sync_seq_to_nvs(vault_memory_t *mem)
     
     if (err == ESP_OK) {
         mem->seq_last_synced = mem->seq_counter;
-        ESP_LOGD(TAG, "Synced sequence counter to NVS: %lu", mem->seq_counter);
+        ESP_LOGD(TAG, "Synced sequence counter to NVS: %u", 
+                 (unsigned int)mem->seq_counter);
         return true;
     }
     
@@ -284,7 +286,7 @@ bool vault_memory_load_seq_from_nvs(vault_memory_t *mem)
     
     if (err == ESP_OK) {
         mem->seq_counter = seq;
-        ESP_LOGI(TAG, "Loaded sequence counter from NVS: %lu", seq);
+        ESP_LOGI(TAG, "Loaded sequence counter from NVS: %u", (unsigned int)seq);
         return true;
     }
     

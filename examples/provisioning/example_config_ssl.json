@@ -1,0 +1,21 @@
+{
+  "id": 200,
+  "wifi": {
+    "s": "ProductionNetwork",
+    "p": "SecurePassword123"
+  },
+  "ip": {
+    "t": "s",
+    "a": "192.168.1.100",
+    "g": "192.168.1.1",
+    "m": "255.255.255.0"
+  },
+  "mqtt": {
+    "u": "mqtts://prod.broker.io",
+    "port": 8883,
+    "ssl": true,
+    "cert": "-----BEGIN CERTIFICATE-----\nMIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh\nMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\nd3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD\nQTAeFw0wNjExMTAwMDAwMDBaFw0zMTExMTAwMDAwMDBaMGExCzAJBgNVBAYTAlVT\n-----END CERTIFICATE-----",
+    "user": "device_001",
+    "pass": "device_secret"
+  }
+}

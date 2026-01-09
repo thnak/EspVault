@@ -1,0 +1,368 @@
+name: Complete Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'components/**'
+      - 'main/**'
+      - 'test/**'
+      - '.github/workflows/test-suite.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'components/**'
+      - 'main/**'
+      - 'test/**'
+      - '.github/workflows/test-suite.yml'
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Which test suite to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - basic
+          - network
+          - integration
+      enable_debug:
+        description: 'Enable debug logging'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  basic-tests:
+    name: QEMU Basic Tests
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'basic' || github.event.inputs.test_suite == '' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+      
+      - name: Setup ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32
+      
+      - name: Install QEMU
+        run: |
+          echo "Installing QEMU for ESP32..."
+          $IDF_PATH/install.sh --enable-qemu
+      
+      - name: Build Test Firmware
+        run: |
+          . $IDF_PATH/export.sh
+          cd test/qemu
+          idf.py build
+      
+      - name: Run Basic QEMU Tests
+        run: |
+          . $IDF_PATH/export.sh
+          cd test/qemu
+          echo "Running basic tests (NVS, Memory, Provisioning)..."
+          timeout 120 idf.py qemu monitor | tee qemu_basic_output.log
+        continue-on-error: false
+      
+      - name: Parse Test Results
+        if: always()
+        run: |
+          cd test/qemu
+          if grep -q "All Tests Completed" qemu_basic_output.log; then
+            echo "✓ Test suite completed"
+            grep -o "[0-9]* Tests [0-9]* Failures [0-9]* Ignored" qemu_basic_output.log | tail -1
+            
+            FAILURES=$(grep -o "[0-9]* Failures" qemu_basic_output.log | tail -1 | grep -o "[0-9]*")
+            if [ "$FAILURES" != "0" ]; then
+              echo "✗ $FAILURES test(s) failed"
+              exit 1
+            fi
+            echo "✓ All basic tests passed"
+          else
+            echo "✗ Test suite did not complete"
+            tail -50 qemu_basic_output.log
+            exit 1
+          fi
+      
+      - name: Upload Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basic-test-logs
+          path: test/qemu/qemu_basic_output.log
+          retention-days: 7
+      
+      - name: Upload Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basic-test-build
+          path: |
+            test/qemu/build/*.bin
+            test/qemu/build/*.elf
+            test/qemu/build/*.map
+          retention-days: 7
+
+  network-tests:
+    name: QEMU Network Tests
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'network' || github.event.inputs.test_suite == '' }}
+    
+    services:
+      mosquitto:
+        image: eclipse-mosquitto:latest
+        ports:
+          - 1883:1883
+        options: >-
+          --health-cmd "mosquitto_sub -t 'test' -C 1 -W 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+      
+      - name: Setup ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32
+      
+      - name: Install QEMU and Dependencies
+        run: |
+          echo "Installing QEMU for ESP32..."
+          $IDF_PATH/install.sh --enable-qemu
+          
+          echo "Installing MQTT tools..."
+          sudo apt-get update
+          sudo apt-get install -y mosquitto-clients
+      
+      - name: Configure Mosquitto
+        run: |
+          echo "Configuring mosquitto for testing..."
+          docker exec ${{ job.services.mosquitto.id }} sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf"
+          docker exec ${{ job.services.mosquitto.id }} sh -c "echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf"
+          docker restart ${{ job.services.mosquitto.id }}
+          sleep 5
+      
+      - name: Test MQTT Broker Connection
+        run: |
+          echo "Testing MQTT broker connectivity..."
+          mosquitto_pub -h localhost -p 1883 -t "test/connection" -m "test_message" -d
+          echo "✓ MQTT broker is accessible"
+      
+      - name: Build Test Firmware
+        run: |
+          . $IDF_PATH/export.sh
+          cd test/qemu
+          idf.py build
+      
+      - name: Run Network Tests with MQTT
+        run: |
+          . $IDF_PATH/export.sh
+          cd test/qemu
+          
+          echo "Starting network tests with MQTT broker..."
+          echo "Broker available at localhost:1883 (QEMU will access via 10.0.2.2:1883)"
+          
+          # Run QEMU with network support
+          timeout 180 idf.py qemu monitor -- -netdev user,id=net0,hostfwd=tcp::1883-10.0.2.2:1883 -device e1000,netdev=net0 | tee qemu_network_output.log
+        continue-on-error: false
+      
+      - name: Parse Network Test Results
+        if: always()
+        run: |
+          cd test/qemu
+          if grep -q "All Tests Completed" qemu_network_output.log; then
+            echo "✓ Network test suite completed"
+            grep -o "[0-9]* Tests [0-9]* Failures [0-9]* Ignored" qemu_network_output.log | tail -1
+            
+            FAILURES=$(grep -o "[0-9]* Failures" qemu_network_output.log | tail -1 | grep -o "[0-9]*")
+            if [ "$FAILURES" != "0" ]; then
+              echo "✗ $FAILURES test(s) failed"
+              exit 1
+            fi
+            echo "✓ All network tests passed"
+          else
+            echo "✗ Network test suite did not complete"
+            tail -50 qemu_network_output.log
+            exit 1
+          fi
+      
+      - name: Upload Network Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-test-logs
+          path: test/qemu/qemu_network_output.log
+          retention-days: 7
+      
+      - name: Upload MQTT Logs
+        if: always()
+        run: |
+          docker logs ${{ job.services.mosquitto.id }} > test/qemu/mosquitto.log 2>&1 || true
+      
+      - name: Upload MQTT Broker Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mqtt-broker-logs
+          path: test/qemu/mosquitto.log
+          retention-days: 7
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'integration' || github.event.inputs.test_suite == '' }}
+    needs: [basic-tests, network-tests]
+    
+    services:
+      mosquitto:
+        image: eclipse-mosquitto:latest
+        ports:
+          - 1883:1883
+        options: >-
+          --health-cmd "mosquitto_sub -t 'test' -C 1 -W 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+      
+      - name: Setup ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32
+      
+      - name: Install QEMU and Dependencies
+        run: |
+          echo "Installing QEMU for ESP32..."
+          $IDF_PATH/install.sh --enable-qemu
+          
+          echo "Installing MQTT and Python tools..."
+          sudo apt-get update
+          sudo apt-get install -y mosquitto-clients python3-pip
+          pip3 install paho-mqtt
+      
+      - name: Configure Mosquitto
+        run: |
+          echo "Configuring mosquitto for testing..."
+          docker exec ${{ job.services.mosquitto.id }} sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf"
+          docker exec ${{ job.services.mosquitto.id }} sh -c "echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf"
+          docker restart ${{ job.services.mosquitto.id }}
+          sleep 5
+      
+      - name: Build Test Firmware
+        run: |
+          . $IDF_PATH/export.sh
+          cd test/qemu
+          idf.py build
+      
+      - name: Run Integration Tests
+        run: |
+          . $IDF_PATH/export.sh
+          cd test/qemu
+          
+          echo "Starting integration tests..."
+          echo "Testing complete provisioning workflow with MQTT broker"
+          
+          # Run QEMU with network support for integration tests
+          timeout 180 idf.py qemu monitor -- -netdev user,id=net0,hostfwd=tcp::1883-10.0.2.2:1883 -device e1000,netdev=net0 | tee qemu_integration_output.log
+        continue-on-error: false
+      
+      - name: Parse Integration Test Results
+        if: always()
+        run: |
+          cd test/qemu
+          if grep -q "All Tests Completed" qemu_integration_output.log; then
+            echo "✓ Integration test suite completed"
+            grep -o "[0-9]* Tests [0-9]* Failures [0-9]* Ignored" qemu_integration_output.log | tail -1
+            
+            FAILURES=$(grep -o "[0-9]* Failures" qemu_integration_output.log | tail -1 | grep -o "[0-9]*")
+            if [ "$FAILURES" != "0" ]; then
+              echo "✗ $FAILURES test(s) failed"
+              exit 1
+            fi
+            echo "✓ All integration tests passed"
+          else
+            echo "✗ Integration test suite did not complete"
+            tail -50 qemu_integration_output.log
+            exit 1
+          fi
+      
+      - name: Upload Integration Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-logs
+          path: test/qemu/qemu_integration_output.log
+          retention-days: 7
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [basic-tests, network-tests, integration-tests]
+    
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: test-results
+      
+      - name: Generate Test Summary
+        run: |
+          echo "# Test Suite Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.basic-tests.result }}" == "success" ]; then
+            echo "✅ **Basic Tests**: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Basic Tests**: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.network-tests.result }}" == "success" ]; then
+            echo "✅ **Network Tests**: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Network Tests**: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.integration-tests.result }}" == "success" ]; then
+            echo "✅ **Integration Tests**: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Integration Tests**: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Test logs and build artifacts are available in the workflow artifacts section" >> $GITHUB_STEP_SUMMARY
+          echo "- Retention period: 7 days" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Check Overall Status
+        run: |
+          if [ "${{ needs.basic-tests.result }}" != "success" ] || \
+             [ "${{ needs.network-tests.result }}" != "success" ] || \
+             [ "${{ needs.integration-tests.result }}" != "success" ]; then
+            echo "❌ One or more test suites failed"
+            exit 1
+          else
+            echo "✅ All test suites passed"
+          fi

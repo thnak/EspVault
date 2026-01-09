@@ -1,12 +1,12 @@
 # ESP32 Partition Table for EspVault Universal Node
 # Optimized for 4MB Flash with Secure Boot and OTA support
 #
-# Name,     Type, SubType, Offset,   Size,     Flags
+# Name,       Type, SubType, Offset,   Size,     Flags
 # Note: Secure boot V2 requires bootloader at 0x1000
-nvs,        data, nvs,     0x9000,   0x6000,   
-phy_init,   data, phy,     0xf000,   0x1000,
-factory,    data, nvs,     0x10000,  0x6000,   encrypted
-otadata,    data, ota,     0x16000,  0x2000,
-ota_0,      app,  ota_0,   0x20000,  0x180000,
-ota_1,      app,  ota_1,   0x1A0000, 0x180000,
-storage,    data, spiffs,  0x320000, 0xD0000,
+nvs,          data, nvs,     0x9000,   0x6000,   
+phy_init,     data, phy,     0xf000,   0x1000,
+factory_cfg,  data, nvs,     0x10000,  0x6000,   encrypted
+otadata,      data, ota,     0x16000,  0x2000,
+ota_0,        app,  ota_0,   0x20000,  0x180000,
+ota_1,        app,  ota_1,   0x1A0000, 0x180000,
+storage,      data, spiffs,  0x320000, 0xD0000,

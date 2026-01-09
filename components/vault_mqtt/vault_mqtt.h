@@ -25,6 +25,10 @@ extern "C" {
 #define VAULT_MQTT_TOPIC_HEARTBEAT  "vault/heartbeat"
 #define VAULT_MQTT_TOPIC_COMMAND    "vault/command"
 
+// Provisioning topics (MQTT v5)
+#define VAULT_MQTT_TOPIC_PROV_CFG   "dev/cfg/"  // Append MAC address
+#define VAULT_MQTT_TOPIC_PROV_RES   "dev/res/"  // Append MAC address
+
 /**
  * @brief MQTT client configuration
  */
@@ -38,6 +42,13 @@ typedef struct {
     bool use_tls;                   // Enable TLS/SSL
 } vault_mqtt_config_t;
 
+// Forward declaration
+typedef void (*vault_mqtt_command_cb_t)(const vault_packet_t *packet, void *user_data);
+typedef void (*vault_mqtt_provisioning_cb_t)(const char *data, int data_len, 
+                                              const char *response_topic,
+                                              const char *correlation_data,
+                                              void *user_data);
+
 /**
  * @brief MQTT client handle
  */
@@ -46,17 +57,47 @@ typedef struct {
     vault_memory_t *memory;
     vault_mqtt_command_cb_t command_callback;
     void *command_user_data;
+    vault_mqtt_provisioning_cb_t prov_callback;
+    void *prov_user_data;
+    char *device_mac;  // Device MAC address for topic construction
     bool connected;
     bool initialized;
 } vault_mqtt_t;
 
 /**
- * @brief Command callback function type
+ * @brief Register callback for provisioning messages (MQTT v5)
  * 
- * @param packet Received command packet
- * @param user_data User-provided context
+ * @param mqtt MQTT client handle
+ * @param callback Callback function
+ * @param user_data User context passed to callback
  */
-typedef void (*vault_mqtt_command_cb_t)(const vault_packet_t *packet, void *user_data);
+void vault_mqtt_register_provisioning_cb(vault_mqtt_t *mqtt,
+                                         vault_mqtt_provisioning_cb_t callback,
+                                         void *user_data);
+
+/**
+ * @brief Publish response to MQTT v5 Response Topic
+ * 
+ * @param mqtt MQTT client handle
+ * @param response_topic Response topic from request
+ * @param correlation_data Correlation data from request
+ * @param payload Response payload (JSON string)
+ * @param qos Quality of Service
+ * @return true on success, false on failure
+ */
+bool vault_mqtt_publish_response(vault_mqtt_t *mqtt,
+                                 const char *response_topic,
+                                 const char *correlation_data,
+                                 const char *payload,
+                                 int qos);
+
+/**
+ * @brief Subscribe to provisioning configuration topic
+ * 
+ * @param mqtt MQTT client handle
+ * @return true on success, false on failure
+ */
+bool vault_mqtt_subscribe_provisioning(vault_mqtt_t *mqtt);
 
 /**
  * @brief Initialize MQTT client

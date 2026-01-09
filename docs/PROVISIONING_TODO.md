@@ -1,0 +1,329 @@
+# Known Issues and TODOs
+
+## MQTT v5 Property Extraction (Critical for Full Functionality)
+
+### Issue
+The current implementation has placeholder TODOs for MQTT v5 Response Topic and Correlation Data extraction. This functionality is essential for proper request-response workflow.
+
+### Location
+`components/vault_mqtt/vault_mqtt.c`:
+- Lines ~57-60: Response Topic extraction from incoming messages
+- Lines ~352-355: Correlation Data inclusion in response messages
+
+### Impact
+Without proper MQTT v5 property handling:
+- Response Topic must be constructed from device MAC (works but not optimal)
+- Correlation Data won't be included in responses (breaks correlation)
+- Clients cannot correlate responses to their original requests
+
+### Solution Required
+Implement proper MQTT v5 property extraction using ESP-IDF MQTT v5 API:
+
+```c
+// In MQTT_EVENT_DATA handler
+if (event->property) {
+    // Extract Response Topic
+    mqtt5_user_property_item_t *property_item = 
+        esp_mqtt5_client_get_user_property(event->property);
+    
+    // Extract Correlation Data
+    // Note: Actual API depends on ESP-IDF version
+}
+
+// In vault_mqtt_publish_response
+esp_mqtt5_publish_property_config_t properties;
+memset(&properties, 0, sizeof(properties));
+
+if (correlation_data) {
+    properties.correlation_data = (uint8_t *)correlation_data;
+    properties.correlation_data_len = strlen(correlation_data);
+}
+
+// Publish with properties
+esp_mqtt_client_enqueue(mqtt->client, topic, payload, 
+                       strlen(payload), qos, 0, true, &properties);
+```
+
+### Testing Status
+- [ ] Test with actual ESP-IDF MQTT v5 implementation
+- [ ] Verify property extraction works with Mosquitto 2.x
+- [ ] Test correlation data round-trip
+
+### Priority
+**CRITICAL** - Required for production use. Current fallback implementation allows basic functionality but breaks proper request-response correlation.
+
+## Task Handle Export
+
+### Issue
+Task handles are exported as global variables for provisioning to suspend/resume them. This creates tight coupling between main.c and vault_provisioning component.
+
+### Location
+`main/main.c`: Lines 28-31
+`components/vault_provisioning/vault_provisioning.c`: Lines 42-48
+
+### Impact
+- Allows provisioning to free resources during setup mode
+- May cause issues if tasks are not properly initialized
+- Reduces modularity and testability of the provisioning component
+- Creates tight coupling between components
+
+### Solution (Future Refactoring)
+Consider one of these approaches:
+1. Pass task handles via initialization function:
+   ```c
+   vault_provisioning_t* vault_provisioning_init(
+       vault_mqtt_t *mqtt, 
+       vault_memory_t *memory,
+       TaskHandle_t *task_handles,
+       size_t num_handles
+   );
+   ```
+
+2. Implement a task manager interface:
+   ```c
+   typedef struct {
+       esp_err_t (*suspend_tasks)(void);
+       esp_err_t (*resume_tasks)(void);
+   } task_manager_t;
+   
+   vault_provisioning_t* vault_provisioning_init(
+       vault_mqtt_t *mqtt,
+       vault_memory_t *memory,
+       task_manager_t *task_mgr
+   );
+   ```
+
+### Current Status
+- ✅ NULL checks implemented in vault_provisioning.c
+- ✅ Comment added about coupling issue
+- ⚠️ Consider refactoring for better modularity
+
+### Testing Status
+- [ ] Test setup mode with active tasks
+- [ ] Verify task suspension/resumption
+- [ ] Check memory freed during setup mode
+
+## Certificate Size Limits
+
+### Issue
+Certificates are limited to 2KB each due to PSRAM allocation constraints.
+
+### Location
+`components/vault_provisioning/vault_provisioning.h`: Line 18
+
+### Impact
+- Some certificate chains may exceed 2KB
+- Limits SSL/TLS configuration options
+
+### Solution (Future Enhancement)
+Implement payload chunking:
+- Split large certificates across multiple MQTT messages
+- Reassemble on device before parsing
+- Use sequence numbers to ensure order
+
+### Testing Status
+- [ ] Test with various certificate sizes
+- [ ] Document actual size limits based on PSRAM availability
+- [ ] Implement chunking if needed
+
+## NVS Storage
+
+### Issue
+Configuration saved to NVS without encryption by default.
+
+### Location
+`components/vault_provisioning/vault_provisioning.c`: vault_provisioning_save_config()
+
+### Impact
+- Credentials stored in plaintext
+- Security risk for production deployments
+
+### Solution
+Enable NVS encryption in production:
+```
+CONFIG_NVS_ENCRYPTION=y
+```
+
+Already documented in `sdkconfig.defaults` and `docs/REMOTE_PROVISIONING.md`
+
+### Testing Status
+- [ ] Test with NVS encryption enabled
+- [ ] Verify encrypted partitions work correctly
+
+## WiFi Connection Testing
+
+### Issue
+Function name `vault_provisioning_test_wifi()` suggests actual connection testing, but implementation only validates configuration format. This is misleading and doesn't prevent invalid credentials.
+
+### Location
+`components/vault_provisioning/vault_provisioning.c`: vault_provisioning_test_wifi()
+
+### Impact
+- Function name is misleading
+- Can't verify credentials before committing
+- May require second provisioning attempt if credentials are wrong
+- No protection against typos in SSID/password
+
+### Solution (Current - Format Validation)
+The current implementation validates:
+- SSID is not empty
+- Static IP configuration completeness (if specified)
+
+This prevents obvious configuration errors but doesn't test actual connectivity.
+
+### Solution (Future Enhancement - Actual Testing)
+Implement actual connection test:
+1. Save current WiFi state
+2. Temporarily disconnect from staging network
+3. Attempt connection to test network
+4. Verify connectivity (ping gateway or DHCP)
+5. Disconnect from test network
+6. Restore staging network connection
+7. Only commit if successful
+
+**Complexity**: High - requires careful WiFi state management
+**Risk**: Could brick device if not implemented carefully
+
+### Alternative Approach
+Rename function to reflect actual behavior:
+```c
+// From:
+esp_err_t vault_provisioning_test_wifi(...)
+
+// To:
+esp_err_t vault_provisioning_validate_wifi_config(...)
+```
+
+This makes the function purpose clear and sets correct expectations.
+
+### Testing Status
+- [ ] Design safe WiFi switching mechanism
+- [ ] Implement connection test (if desired)
+- [ ] Add timeout and retry logic
+- [ ] Consider function rename for clarity
+
+### Priority
+**MEDIUM** - Current validation prevents obvious errors. Full connection testing is enhancement.
+
+## MQTT Connection Testing
+
+### Issue
+Similar to WiFi - validation is format-only.
+
+### Location
+`components/vault_provisioning/vault_provisioning.c`: vault_provisioning_test_mqtt()
+
+### Impact
+- Can't verify broker connectivity before committing
+
+### Solution (Future Enhancement)
+- Create temporary MQTT client
+- Test connection to production broker
+- Destroy client if successful
+- Requires careful resource management
+
+### Testing Status
+- [ ] Implement MQTT test connection
+- [ ] Handle SSL/TLS in test client
+- [ ] Add proper cleanup
+
+## Memory Management
+
+### Issue
+Large JSON payloads and certificates allocated in PSRAM.
+
+### Location
+Throughout `vault_provisioning.c`
+
+### Current Status
+- ✅ Using heap_caps_malloc with MALLOC_CAP_SPIRAM
+- ✅ Proper free() calls in vault_provisioning_free_config()
+- ✅ Memory reporting in responses
+- ✅ Error logging for allocation failures (added)
+
+### Certificate Allocation
+Certificate allocation failures are now logged but don't fail the entire configuration parsing. This allows:
+- Configuration to proceed without SSL if cert allocation fails
+- User to see error in logs
+- Possibly reduce cert size and retry
+
+**Note**: If SSL is required, the connection will fail later during MQTT connection test. Consider adding a validation step to check if SSL is enabled but certs failed to allocate.
+
+### Testing Needed
+- [ ] Test with maximum payload sizes
+- [ ] Monitor PSRAM fragmentation
+- [ ] Test multiple provisioning cycles
+- [ ] Test behavior when SSL enabled but cert allocation fails
+
+## Python Script Dependencies
+
+### Issue
+Requires paho-mqtt library.
+
+### Location
+`examples/provisioning/provision_device.py`
+
+### Impact
+- Users need to install dependencies
+- May have version compatibility issues
+
+### Solution
+Already documented in README with installation instructions.
+
+### Enhancement Ideas
+- Add requirements.txt file
+- Create Docker container for provisioner
+- Add Node.js alternative
+
+## Documentation
+
+### Status
+- ✅ Complete provisioning workflow documented
+- ✅ Payload format examples
+- ✅ Python script with usage examples
+- ✅ Security considerations
+- ❌ Hardware testing results pending
+
+### Needed
+- [ ] Add screenshots/logs from actual device provisioning
+- [ ] Document tested MQTT broker versions
+- [ ] Add troubleshooting section with common errors
+- [ ] Create video tutorial
+
+## Next Steps for Production Readiness
+
+1. **Implement MQTT v5 Properties** (Critical)
+   - Response Topic extraction
+   - Correlation Data handling
+   
+2. **Hardware Testing** (Critical)
+   - Test full workflow on ESP32
+   - Verify memory management
+   - Test with various payloads
+   
+3. **Connection Testing** (Important)
+   - Implement WiFi dry-run
+   - Implement MQTT dry-run
+   
+4. **Security Hardening** (Important)
+   - Enable NVS encryption
+   - Test with secure boot
+   - Audit credential handling
+   
+5. **Enhanced Features** (Nice to Have)
+   - Physical button trigger for setup mode
+   - Payload chunking for large certs
+   - Batch provisioning support
+   - Web-based provisioning portal
+
+## Contributing
+
+When addressing these TODOs:
+1. Update this file with findings
+2. Add tests where possible
+3. Update documentation with actual behavior
+4. Submit PR with detailed description
+
+## Questions?
+
+Open an issue on GitHub: https://github.com/thnak/EspVault/issues

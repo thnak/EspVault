@@ -73,8 +73,9 @@ EspVault/
 # Set target
 idf.py set-target esp32
 
-# Configure project
-idf.py menuconfig
+# Clean build (recommended for first build or after updates)
+idf.py fullclean
+rm -f sdkconfig sdkconfig.old
 
 # Build
 idf.py build
@@ -82,6 +83,8 @@ idf.py build
 # Flash
 idf.py flash monitor
 ```
+
+**Build Issues?** See [Build Troubleshooting Guide](docs/BUILD_TROUBLESHOOTING.md) for common problems and solutions.
 
 ### Key Configuration Options
 
@@ -144,6 +147,31 @@ CMD_REPLAY_FROM [SEQ_START] TO [SEQ_END]
 
 ESP32 searches 2MB PSRAM history and republishes with `IS_REPLAY` flag set.
 
+## Remote Provisioning (MQTT v5)
+
+EspVault supports **remote provisioning** via MQTT v5 for zero-touch deployment:
+
+- **Staging Network**: Dedicated WiFi/MQTT network for initial configuration
+- **Setup Mode**: Suspends operational tasks to free resources for large payloads
+- **Request-Response**: MQTT v5 Response Topic pattern with Correlation Data
+- **Dry-Run Testing**: Validates configuration before committing to prevent bricking
+- **SSL/TLS Support**: Optional certificate provisioning (up to 2KB per cert)
+
+### Quick Example
+
+```bash
+# Send provisioning command
+python examples/provisioning/provision_device.py \
+  --mac aabbccddeeff \
+  --config device_config.json \
+  --broker staging.local
+```
+
+See documentation:
+- [Remote Provisioning Guide](docs/REMOTE_PROVISIONING.md) - Complete workflow and API
+- [Default Configuration Guide](docs/DEFAULT_CONFIGURATION.md) - How to set staging credentials
+- [Provisioning Examples](docs/PROVISIONING_EXAMPLES.md) - Payload examples and common issues
+
 ## Development Milestones
 
 - [x] Phase 1: Project structure and component architecture
@@ -151,10 +179,10 @@ ESP32 searches 2MB PSRAM history and republishes with `IS_REPLAY` flag set.
 - [x] Phase 3: PSRAM memory management with ring buffers
 - [x] Phase 4: MQTT 5.0 client with replay support
 - [x] Phase 5: Dual-core task architecture
-- [ ] Phase 6: RMT peripheral integration for pulse capture
-- [ ] Phase 7: ESP-NOW gateway functionality
-- [ ] Phase 8: Secure Boot and Flash Encryption
-- [ ] Phase 9: WiFi provisioning (BLE/SoftAP)
+- [x] Phase 6: Remote provisioning with MQTT v5 (Staging Network)
+- [ ] Phase 7: RMT peripheral integration for pulse capture
+- [ ] Phase 8: ESP-NOW gateway functionality
+- [ ] Phase 9: Secure Boot and Flash Encryption
 - [ ] Phase 10: OTA firmware updates
 
 ## Testing Strategy
@@ -164,10 +192,20 @@ ESP32 searches 2MB PSRAM history and republishes with `IS_REPLAY` flag set.
 - Sequence counter logic
 - Memory management unit tests
 
-### Tier 2: QEMU
+### Tier 2: QEMU ✅
 - Bootloader validation
 - Partition table verification
 - NVS operations
+- Provisioning configuration tests
+- Memory management validation
+
+**Run QEMU tests**:
+```bash
+cd test/qemu
+./run_qemu_tests.sh
+```
+
+See [QEMU Test Documentation](test/qemu/README.md) for details.
 
 ### Tier 3: Wokwi CI
 - Hardware-in-loop simulation
