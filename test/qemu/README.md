@@ -114,8 +114,28 @@ test_provisioning_wifi_config... PASS
 test_provisioning_mqtt_config... PASS
 test_provisioning_save_load... PASS
 
+===============================================
+  Test Suite 4: Network & Ethernet (QEMU)
+===============================================
+
+test_network_info... PASS
+test_network_ethernet_init... PASS
+test_network_ethernet_connect... PASS
+test_network_mqtt_connect... PASS
+test_network_mqtt_pubsub... PASS
+test_network_cleanup... PASS
+
+===============================================
+  Test Suite 5: Integration Tests
+===============================================
+
+test_integration_network_simulation_info... PASS
+test_integration_full_provisioning_flow... PASS
+test_integration_provisioning_with_ssl... PASS
+test_integration_provisioning_failure_recovery... PASS
+
 -----------------------
-8 Tests 0 Failures 0 Ignored 
+18 Tests 0 Failures 0 Ignored 
 OK
 
 ╔══════════════════════════════════════════════╗
@@ -313,12 +333,35 @@ jobs:
           ./run_qemu_tests.sh
 ```
 
+## Network Testing
+
+QEMU provides user-mode networking (SLIRP) that allows testing:
+
+- ✅ **Ethernet connectivity**: TCP/IP stack initialization
+- ✅ **MQTT broker communication**: Real broker at 10.0.2.2:1883 (host)
+- ✅ **End-to-end provisioning**: Complete workflow testing
+- ✅ **SSL/TLS**: Certificate handling (requires broker setup)
+
+### Quick Network Test
+
+```bash
+# Terminal 1: Start MQTT broker
+mosquitto -v -p 1883
+
+# Terminal 2: Run network tests
+cd test/qemu
+./run_network_tests.sh
+```
+
+See [NETWORK_TESTING.md](NETWORK_TESTING.md) for comprehensive guide.
+
 ## Known Limitations
 
-- **Network**: QEMU doesn't simulate WiFi/network interfaces
+- **WiFi**: QEMU uses Ethernet instead of WiFi (same TCP/IP stack)
 - **RMT**: Peripheral simulation is limited
-- **Timing**: QEMU timing is not cycle-accurate
+- **Timing**: QEMU runs ~5x slower than real hardware
 - **Flash**: Flash wear simulation is simplified
+- **Network Performance**: 10-20 Mbps (vs 100 Mbps on hardware)
 
 ## References
 
