@@ -58,14 +58,14 @@ jobs:
       
       - name: Build Test Firmware
         run: |
-          cd test/qemu
           . $IDF_PATH/export.sh
+          cd test/qemu
           idf.py build
       
       - name: Run Basic QEMU Tests
         run: |
-          cd test/qemu
           . $IDF_PATH/export.sh
+          cd test/qemu
           echo "Running basic tests (NVS, Memory, Provisioning)..."
           timeout 120 idf.py qemu monitor | tee qemu_basic_output.log
         continue-on-error: false
@@ -162,14 +162,14 @@ jobs:
       
       - name: Build Test Firmware
         run: |
-          cd test/qemu
           . $IDF_PATH/export.sh
+          cd test/qemu
           idf.py build
       
       - name: Run Network Tests with MQTT
         run: |
-          cd test/qemu
           . $IDF_PATH/export.sh
+          cd test/qemu
           
           echo "Starting network tests with MQTT broker..."
           echo "Broker available at localhost:1883 (QEMU will access via 10.0.2.2:1883)"
@@ -268,14 +268,14 @@ jobs:
       
       - name: Build Test Firmware
         run: |
-          cd test/qemu
           . $IDF_PATH/export.sh
+          cd test/qemu
           idf.py build
       
       - name: Run Integration Tests
         run: |
-          cd test/qemu
           . $IDF_PATH/export.sh
+          cd test/qemu
           
           echo "Starting integration tests..."
           echo "Testing complete provisioning workflow with MQTT broker"
